@@ -1,6 +1,5 @@
-#include <vulkan/vulkan.h>
-
 #include <iostream>
+#include <vulkan/vulkan.hpp>
 
 int main() {
     // uint64_t a[1'000'000'000];
@@ -62,21 +61,33 @@ int main() {
     // queue
     uint32_t queueFamilyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, nullptr);
-    VkQueueFamilyProperties queueFamilies[16];
-    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, &queueFamilies[0]);
-
+    VkQueueFamilyProperties queueFamilies[queueFamilyCount];
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilies);
+    std::cout << "There are " << queueFamilyCount << " work lines." << '\n';
     uint32_t computeQueueFamilyIndex = UINT32_MAX;
-    for (uint32_t i = 0; i < queueFamilyCount; i++) {
-        if (queueFamilies[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
+    for (uint32_t i = 0; i < queueFamilyCount; ++i) {
+        std::cout << "Work line #" << i << " can do: ";
+
+        VkQueueFlags f = queueFamilies[i].queueFlags;
+        if (f & VK_QUEUE_GRAPHICS_BIT) std::cout << "Graphics ";
+        if (f & VK_QUEUE_COMPUTE_BIT) {
+            std::cout << "Compute ";
             computeQueueFamilyIndex = i;
-            break;
         }
+        if (f & VK_QUEUE_TRANSFER_BIT) std::cout << "Transfer ";
+        if (f & VK_QUEUE_SPARSE_BINDING_BIT) std::cout << "Sparse ";
+        if (f & VK_QUEUE_PROTECTED_BIT) std::cout << "Protected ";
+        if (f & VK_QUEUE_VIDEO_DECODE_BIT_KHR) std::cout << "Decode ";
+        if (f & VK_QUEUE_VIDEO_ENCODE_BIT_KHR) std::cout << "Protected ";
+        if (f & VK_QUEUE_OPTICAL_FLOW_BIT_NV) std::cout << "(What the hell is this?) ";
+        if (f & VK_QUEUE_DATA_GRAPH_BIT_ARM) std::cout << "ARM magics ";
+        std::cout << '\n';
     }
     if (computeQueueFamilyIndex == UINT32_MAX) {
         std::cerr << "No compute queue found!\n";
         return -1;
     }
-
+    std::cout << "Are you still the same?" << '\n';
     // Cleanup
     vkDestroyInstance(instance, nullptr);
 }

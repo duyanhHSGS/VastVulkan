@@ -3,6 +3,9 @@
 #include <iostream>
 
 int main() {
+    // uint64_t a[1'000'000'000];
+    // for (size_t i = 0; i < 1'000'000'000; ++i) a[i]++;
+
     // Create instance
     VkInstance instance{};
     VkInstanceCreateInfo info{};
@@ -53,6 +56,25 @@ int main() {
                   << VK_VERSION_MINOR(props.apiVersion) << "."
                   << VK_VERSION_PATCH(props.apiVersion) << "\n";
         std::cout << "  Max Compute Units: " << props.limits.maxComputeWorkGroupCount[0] << "\n\n";
+    }
+    // pick the 0th device
+    VkPhysicalDevice physicalDevice = devices[0];
+    // queue
+    uint32_t queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, nullptr);
+    VkQueueFamilyProperties queueFamilies[16];
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, &queueFamilies[0]);
+
+    uint32_t computeQueueFamilyIndex = UINT32_MAX;
+    for (uint32_t i = 0; i < queueFamilyCount; i++) {
+        if (queueFamilies[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
+            computeQueueFamilyIndex = i;
+            break;
+        }
+    }
+    if (computeQueueFamilyIndex == UINT32_MAX) {
+        std::cerr << "No compute queue found!\n";
+        return -1;
     }
 
     // Cleanup

@@ -124,6 +124,27 @@ int main() {
         return -1;
     }
     std::cout << "Logical (not real) robot dude was made!!" << '\n';
+    // make some empty slot
+    VkBuffer buffer;
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;  // structure type is STRUCTURE_CREATE
+    bufferInfo.size = sizeof(uint64_t) * 9;                   // 8 bytes, make more laterrr!!!
+    bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;    // STORAGE buffers
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    // make slot!
+    if (vkCreateBuffer(logicalDevice, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
+        std::cerr << "Failed to create buffer!\n";
+        return -1;
+    }
+    // requre explicit memory big gorilla
+    VkMemoryRequirements memReq;
+    vkGetBufferMemoryRequirements(logicalDevice, buffer, &memReq);
+    std::cout << "Are you still the same?" << '\n';
+    std::cout << "GPU says: I need a box with these specs\n";
+    std::cout << "  Size needed: " << memReq.size << " bytes\n";
+    std::cout << "  Alignment: " << memReq.alignment << " bytes\n";
+    std::cout << "  Memory types bitmask: 0x"
+              << std::hex << memReq.memoryTypeBits << std::dec << "\n";
     // Cleanup
     vkDestroyDevice(logicalDevice, nullptr);
     vkDestroyInstance(instance, nullptr);

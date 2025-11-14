@@ -1,6 +1,20 @@
 #include <iostream>
 #include <vulkan/vulkan.hpp>
 
+// MASSIVE OVERRIDE! HEAP POLIIIIICE!
+void* operator new(std::size_t) {
+    std::cerr << "[ALERT] Heap allocation detected! Birdy hates heap! exploding...\n";
+    std::abort();
+}
+void* operator new[](std::size_t) {
+    std::cerr << "[ALERT] Heap array detected! Birdy hates heap! exploding...\n";
+    std::abort();
+}
+void operator delete(void*) noexcept {}
+void operator delete(void*, std::size_t) noexcept {}
+void operator delete[](void*) noexcept {}
+void operator delete[](void*, std::size_t) noexcept {}
+
 int main() {
     // uint64_t a[1'000'000'000];
     // for (size_t i = 0; i < 1'000'000'000; ++i) a[i]++;
@@ -64,6 +78,7 @@ int main() {
     VkQueueFamilyProperties queueFamilies[queueFamilyCount];
     vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilies);
     std::cout << "There are " << queueFamilyCount << " work lines." << '\n';
+    // get the computing work line
     uint32_t computeQueueFamilyIndex = UINT32_MAX;
     for (uint32_t i = 0; i < queueFamilyCount; ++i) {
         std::cout << "Work line #" << i << " can do: ";
@@ -88,6 +103,28 @@ int main() {
         return -1;
     }
     std::cout << "Are you still the same?" << '\n';
+    // got the computing work line
+    // make a robot dude
+    VkDevice logicalDevice;
+    float queuePriority = 1.0f;  // asap!
+    // conveyor belt
+    VkDeviceQueueCreateInfo queueInfo{};
+    queueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;  // structure type is DEVICE_QUEUE_CREATE
+    queueInfo.queueFamilyIndex = computeQueueFamilyIndex;          // select the work line
+    queueInfo.queueCount = 1;                                      // ???? huh?
+    queueInfo.pQueuePriorities = &queuePriority;                   // this belt goes first now!?
+    // robot dude's info
+    VkDeviceCreateInfo deviceInfo{};
+    deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;  // structure type is DEVICE_CREATE
+    deviceInfo.queueCreateInfoCount = 1;                      // ??
+    deviceInfo.pQueueCreateInfos = &queueInfo;                // stamp
+    // make robot!
+    if (vkCreateDevice(physicalDevice, &deviceInfo, nullptr, &logicalDevice) != VK_SUCCESS) {
+        std::cerr << "Failed to create logical device!\n";
+        return -1;
+    }
+    std::cout << "Logical (not real) robot dude was made!!" << '\n';
     // Cleanup
+    vkDestroyDevice(logicalDevice, nullptr);
     vkDestroyInstance(instance, nullptr);
 }

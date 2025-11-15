@@ -10,14 +10,55 @@ void* operator new[](std::size_t) {
     std::cerr << "[ALERT] Heap array detected! Birdy hates heap! exploding...\n";
     std::abort();
 }
+// extern "C" void* malloc(std::size_t) {
+//     std::cerr << "[ALERT] malloc? How about alloc your mum?\n";
+//     std::abort();
+// }
+// extern "C" void* calloc(size_t, size_t) {
+//     std::cerr << "[ALERT] calloc? How about alloc your mum?\n";
+//     std::abort();
+// }
+// extern "C" void* realloc(void*, size_t) {
+//     std::cerr << "[ALERT] realloc? How about alloc your mum?\n";
+//     std::abort();
+// }
 void operator delete(void*) noexcept {}
 void operator delete(void*, std::size_t) noexcept {}
 void operator delete[](void*) noexcept {}
 void operator delete[](void*, std::size_t) noexcept {}
 
+uint32_t findMemoryType(
+    VkPhysicalDevice physicalDevice,
+    uint32_t typeFilter,
+    VkMemoryPropertyFlags props) {
+    VkPhysicalDeviceMemoryProperties memProps;
+    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProps);
+
+    for (uint32_t i = 0; i < memProps.memoryTypeCount; ++i) {
+        bool typeOK = typeFilter & (1 << i);
+        bool propsOK = (memProps.memoryTypes[i].propertyFlags & props) == props;
+
+        if (typeOK && propsOK) return i;
+    }
+
+    std::cerr << "No suitable memory type!\n";
+    std::abort();
+}
+
 int main() {
     // uint64_t a[1'000'000'000];
     // for (size_t i = 0; i < 1'000'000'000; ++i) a[i]++;
+    // My custom alloc
+    // VkAllocationCallbacks myAllocator{};
+    // myAllocator.pUserData = nullptr;
+    // myAllocator.pfnAllocation = [](void* user, size_t size, size_t alignment, VkSystemAllocationScope scope) {
+    //     std::cerr << "Heap detected! Aborting\n";
+    //     std::abort();
+    // };
+    // myAllocator.pfnReallocation = nullptr;
+    // myAllocator.pfnFree = nullptr;
+    // myAllocator.pfnInternalAllocation = nullptr;
+    // myAllocator.pfnInternalFree = nullptr;
 
     // Create instance
     VkInstance instance{};
@@ -128,7 +169,7 @@ int main() {
     VkBuffer buffer;
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;  // structure type is STRUCTURE_CREATE
-    bufferInfo.size = sizeof(uint64_t) * 9;                   // 8 bytes, make more laterrr!!!
+    bufferInfo.size = sizeof(uint64_t) * 9;                   // 8*9 bytes, make more laterrr!!!
     bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;    // STORAGE buffers
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     // make slot!
@@ -137,6 +178,7 @@ int main() {
         return -1;
     }
     // requre explicit memory big gorilla
+    // this isnt the same as  bufferInfo.size, since rounding exists
     VkMemoryRequirements memReq;
     vkGetBufferMemoryRequirements(logicalDevice, buffer, &memReq);
     std::cout << "Are you still the same?" << '\n';
@@ -145,6 +187,24 @@ int main() {
     std::cout << "  Alignment: " << memReq.alignment << " bytes\n";
     std::cout << "  Memory types bitmask: 0x"
               << std::hex << memReq.memoryTypeBits << std::dec << "\n";
+    std::cout << "Are you still the same?" << '\n';
+    // alloc memory!!!!! no heap violation
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memReq.size;  // must be >= mem requirements
+    allocInfo.memoryTypeIndex = findMemoryType(
+        physicalDevice,
+        memReq.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    std::cout << allocInfo.memoryTypeIndex << '\n';
+    VkDeviceMemory bufferMemory;
+    if (vkAllocateMemory(logicalDevice, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
+        std::cerr << "Failed to allocate memory!\n";
+        return -1;
+    }
+
     // Cleanup
     vkDestroyDevice(logicalDevice, nullptr);
     vkDestroyInstance(instance, nullptr);

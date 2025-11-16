@@ -71,13 +71,13 @@ int main() {
 
     // Enumerate physical devices
     uint32_t deviceCount = 0;
-    vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+    vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);  // get number of device
     if (deviceCount == 0) {
         std::cerr << "No GPUs with Vulkan support found!\n";
         return -1;
     }
-    VkPhysicalDevice devices[16];
-    vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+    constexpr uint64_t MAX_DEVICE = 16;
+    VkPhysicalDevice devices[MAX_DEVICE];
     vkEnumeratePhysicalDevices(instance, &deviceCount, devices);
 
     // Print GPU info
@@ -198,13 +198,36 @@ int main() {
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-    std::cout << allocInfo.memoryTypeIndex << '\n';
+    std::cout << allocInfo.memoryTypeIndex << '\n';  // returns 1 ????????????????????
     VkDeviceMemory bufferMemory;
+    // alloc!
     if (vkAllocateMemory(logicalDevice, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
         std::cerr << "Failed to allocate memory!\n";
         return -1;
     }
+    // bind memory
+    if (vkBindBufferMemory(logicalDevice, buffer, bufferMemory, 0) != VK_SUCCESS) {
+        std::cerr << "Failed to bind memory!\n";
+        return -1;
+    }
 
+    // map memory
+    void* data = nullptr;  // this shared "part" will be used to compute???
+    if (vkMapMemory(logicalDevice, bufferMemory, 0, memReq.size, 0, &data) != VK_SUCCESS) {
+        std::cerr << "Failed to bind memory!\n";
+        return -1;
+    }
+
+    // use the "shared" part! we will use 9* size of (uint64_t) = 72 bytes as served before, can i use 128 bytes (to write!!) instead?
+    uint64_t* nums = (uint64_t*)(data);
+    for (size_t i = 0; i < 9; ++i) {
+        nums[i] = i * 10;
+        std::cout << "nums[" << i << "] = " << nums[i] << '\n';
+    }
+    // unmap later
+    vkUnmapMemory(logicalDevice, bufferMemory);
+
+    // actual compute? i aint ready for this!!!
     // Cleanup
     vkDestroyDevice(logicalDevice, nullptr);
     vkDestroyInstance(instance, nullptr);

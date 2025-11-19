@@ -109,12 +109,127 @@ int main() {
                   << VK_VERSION_MAJOR(props.apiVersion) << "."
                   << VK_VERSION_MINOR(props.apiVersion) << "."
                   << VK_VERSION_PATCH(props.apiVersion) << "\n";
-        std::cout << "  Max Compute Units -X: " << props.limits.maxComputeWorkGroupCount[0] << "\n";
-        std::cout << "  Max Compute Units -Y: " << props.limits.maxComputeWorkGroupCount[1] << "\n";
-        std::cout << "  Max Compute Units -Z: " << props.limits.maxComputeWorkGroupCount[2] << "\n\n";
+        std::cout << "  Max Compute Units: " << props.limits.maxComputeWorkGroupCount[0] << "\n\n";
     }
     // pick the 0th device
     VkPhysicalDevice physicalDevice = devices[0];
+    // queue
+    constexpr uint64_t MAX_WORK_LINES = 16;
+    uint32_t queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, nullptr);
+    VkQueueFamilyProperties queueFamilies[MAX_WORK_LINES];
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilies);
+    std::cout << "There are " << queueFamilyCount << " work lines." << '\n';
+    // get the computing work line
+    uint32_t computeQueueFamilyIndex = UINT32_MAX;
+    for (uint32_t i = 0; i < queueFamilyCount; ++i) {
+        std::cout << "Work line #" << i << " can do: ";
 
+        VkQueueFlags f = queueFamilies[i].queueFlags;
+        if (f & VK_QUEUE_GRAPHICS_BIT) std::cout << "Graphics ";
+        if (f & VK_QUEUE_COMPUTE_BIT) {
+            std::cout << "Compute ";
+            computeQueueFamilyIndex = i;
+        }
+        if (f & VK_QUEUE_TRANSFER_BIT) std::cout << "Transfer ";
+        if (f & VK_QUEUE_SPARSE_BINDING_BIT) std::cout << "Sparse ";
+        if (f & VK_QUEUE_PROTECTED_BIT) std::cout << "Protected ";
+        if (f & VK_QUEUE_VIDEO_DECODE_BIT_KHR) std::cout << "Decode ";
+        if (f & VK_QUEUE_VIDEO_ENCODE_BIT_KHR) std::cout << "Protected ";
+        if (f & VK_QUEUE_OPTICAL_FLOW_BIT_NV) std::cout << "(What the hell is this?) ";
+        if (f & VK_QUEUE_DATA_GRAPH_BIT_ARM) std::cout << "ARM magics ";
+        std::cout << '\n';
+    }
+    if (computeQueueFamilyIndex == UINT32_MAX) {
+        std::cerr << "No compute queue found!\n";
+        return -1;
+    }
+    std::cout << "Are you still the same?" << '\n';
+    // got the computing work line
+    // make a robot dude
+    VkDevice logicalDevice;
+    float queuePriority = 1.0f;  // asap!
+    // conveyor belt
+    VkDeviceQueueCreateInfo queueInfo{};
+    queueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;  // structure type is DEVICE_QUEUE_CREATE
+    queueInfo.queueFamilyIndex = computeQueueFamilyIndex;          // select the work line
+    queueInfo.queueCount = 1;                                      // ???? huh?
+    queueInfo.pQueuePriorities = &queuePriority;                   // this belt goes first now!?
+    // robot dude's info
+    VkDeviceCreateInfo deviceInfo{};
+    deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;  // structure type is DEVICE_CREATE
+    deviceInfo.queueCreateInfoCount = 1;                      // ??
+    deviceInfo.pQueueCreateInfos = &queueInfo;                // stamp
+    // make robot!
+    if (vkCreateDevice(physicalDevice, &deviceInfo, nullptr, &logicalDevice) != VK_SUCCESS) {
+        std::cerr << "Failed to create logical device!\n";
+        return -1;
+    }
+    std::cout << "Logical (not real) robot dude was made!!" << '\n';
+    // make some empty slot
+    VkBuffer buffer;
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;  // structure type is STRUCTURE_CREATE
+    bufferInfo.size = sizeof(uint32_t) * 9;                   // 4*9 bytes, make more laterrr!!!
+    bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;    // STORAGE buffers
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    // make slot!
+    if (vkCreateBuffer(logicalDevice, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
+        std::cerr << "Failed to create buffer!\n";
+        return -1;
+    }
+    // requre explicit memory big gorilla
+    // this isnt the same as  bufferInfo.size, since rounding exists
+    VkMemoryRequirements memReq;
+    vkGetBufferMemoryRequirements(logicalDevice, buffer, &memReq);
+    std::cout << "Are you still the same?" << '\n';
+    std::cout << "GPU says: I need a box with these specs\n";
+    std::cout << "  Size needed: " << memReq.size << " bytes\n";
+    std::cout << "  Alignment: " << memReq.alignment << " bytes\n";
+    std::cout << "  Memory types bitmask: 0x"
+              << std::hex << memReq.memoryTypeBits << std::dec << "\n";
+    std::cout << "Are you still the same?" << '\n';
+    // alloc memory!!!!! no heap violation
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memReq.size;  // must be >= mem requirements
+    allocInfo.memoryTypeIndex = findMemoryType(
+        physicalDevice,
+        memReq.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    std::cout << allocInfo.memoryTypeIndex << '\n';  // returns 1 ????????????????????
+    VkDeviceMemory bufferMemory;
+    // alloc!
+    if (vkAllocateMemory(logicalDevice, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
+        std::cerr << "Failed to allocate memory!\n";
+        return -1;
+    }
+    // bind memory
+    if (vkBindBufferMemory(logicalDevice, buffer, bufferMemory, 0) != VK_SUCCESS) {
+        std::cerr << "Failed to bind memory!\n";
+        return -1;
+    }
+
+    // map memory
+    void* data = nullptr;  // this shared "part" will be used to compute???
+    if (vkMapMemory(logicalDevice, bufferMemory, 0, memReq.size, 0, &data) != VK_SUCCESS) {
+        std::cerr << "Failed to bind memory!\n";
+        return -1;
+    }
+
+    // use the "shared" part! we will use 9* size of (uint32_t) = 36 bytes as served before, can i use 128 bytes (to write!!) instead?
+    uint32_t* nums = (uint32_t*)(data);
+    for (size_t i = 0; i < 9; ++i) {
+        nums[i] = i * 10;
+        std::cout << "nums[" << i << "] = " << nums[i] << '\n';
+    }
+    // unmap later
+    vkUnmapMemory(logicalDevice, bufferMemory);
+
+    // actual compute? i aint ready for this!!!
+    // Cleanup
+    vkDestroyDevice(logicalDevice, nullptr);
     vkDestroyInstance(instance, nullptr);
 }

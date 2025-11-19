@@ -1,0 +1,120 @@
+#include <iostream>
+#include <vulkan/vulkan.hpp>
+
+// MASSIVE OVERRIDE! HEAP POLIIIIICE!
+void* operator new(std::size_t) {
+    std::cerr << "[ALERT] Heap allocation detected! Birdy hates heap! exploding...\n";
+    std::abort();
+}
+void* operator new[](std::size_t) {
+    std::cerr << "[ALERT] Heap array detected! Birdy hates heap! exploding...\n";
+    std::abort();
+}
+// extern "C" void* malloc(std::size_t) {
+//     std::cerr << "[ALERT] malloc? How about alloc your mum?\n";
+//     std::abort();
+// }
+// extern "C" void* calloc(size_t, size_t) {
+//     std::cerr << "[ALERT] calloc? How about alloc your mum?\n";
+//     std::abort();
+// }
+// extern "C" void* realloc(void*, size_t) {
+//     std::cerr << "[ALERT] realloc? How about alloc your mum?\n";
+//     std::abort();
+// }
+void operator delete(void*) noexcept {}
+void operator delete(void*, std::size_t) noexcept {}
+void operator delete[](void*) noexcept {}
+void operator delete[](void*, std::size_t) noexcept {}
+
+uint32_t findMemoryType(
+    VkPhysicalDevice physicalDevice,
+    uint32_t typeFilter,
+    VkMemoryPropertyFlags props) {
+    VkPhysicalDeviceMemoryProperties memProps;
+    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProps);
+
+    for (uint32_t i = 0; i < memProps.memoryTypeCount; ++i) {
+        bool typeOK = typeFilter & (1 << i);
+        bool propsOK = (memProps.memoryTypes[i].propertyFlags & props) == props;
+
+        if (typeOK && propsOK) return i;
+    }
+
+    std::cerr << "No suitable memory type!\n";
+    std::abort();
+}
+
+int main() {
+    // uint64_t a[1'000'000'000];
+    // for (size_t i = 0; i < 1'000'000'000; ++i) a[i]++;
+    // My custom alloc
+    // VkAllocationCallbacks myAllocator{};
+    // myAllocator.pUserData = nullptr;
+    // myAllocator.pfnAllocation = [](void* user, size_t size, size_t alignment, VkSystemAllocationScope scope) {
+    //     std::cerr << "Heap detected! Aborting\n";
+    //     std::abort();
+    // };
+    // myAllocator.pfnReallocation = nullptr;
+    // myAllocator.pfnFree = nullptr;
+    // myAllocator.pfnInternalAllocation = nullptr;
+    // myAllocator.pfnInternalFree = nullptr;
+
+    // Create instance
+    VkInstance instance{};
+    VkInstanceCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    if (vkCreateInstance(&info, nullptr, &instance) != VK_SUCCESS) {
+        std::cerr << "Failed to create Vulkan instance!\n";
+        return -1;
+    }
+
+    // Enumerate physical devices
+    uint32_t deviceCount = 0;
+    vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);  // get number of device
+    if (deviceCount == 0) {
+        std::cerr << "No GPUs with Vulkan support found!\n";
+        return -1;
+    }
+    constexpr uint64_t MAX_DEVICE = 16;
+    VkPhysicalDevice devices[MAX_DEVICE];
+    vkEnumeratePhysicalDevices(instance, &deviceCount, devices);
+
+    // Print GPU info
+    for (uint32_t i = 0; i < deviceCount; ++i) {
+        VkPhysicalDeviceProperties props;
+        vkGetPhysicalDeviceProperties(devices[i], &props);
+
+        std::cout << "GPU #" << i << ":\n";
+        std::cout << "  Name: " << props.deviceName << "\n";
+        std::cout << "  Type: ";
+        switch (props.deviceType) {
+            case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
+                std::cout << "Integrated\n";
+                break;
+            case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
+                std::cout << "Discrete\n";
+                break;
+            case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:
+                std::cout << "Virtual\n";
+                break;
+            case VK_PHYSICAL_DEVICE_TYPE_CPU:
+                std::cout << "CPU\n";
+                break;
+            default:
+                std::cout << "Other\n";
+                break;
+        }
+        std::cout << "  API Version: "
+                  << VK_VERSION_MAJOR(props.apiVersion) << "."
+                  << VK_VERSION_MINOR(props.apiVersion) << "."
+                  << VK_VERSION_PATCH(props.apiVersion) << "\n";
+        std::cout << "  Max Compute Units -X: " << props.limits.maxComputeWorkGroupCount[0] << "\n";
+        std::cout << "  Max Compute Units -Y: " << props.limits.maxComputeWorkGroupCount[1] << "\n";
+        std::cout << "  Max Compute Units -Z: " << props.limits.maxComputeWorkGroupCount[2] << "\n\n";
+    }
+    // pick the 0th device
+    VkPhysicalDevice physicalDevice = devices[0];
+
+    vkDestroyInstance(instance, nullptr);
+}

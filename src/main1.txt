@@ -115,6 +115,6 @@ int main() {
     }
     // pick the 0th device
     VkPhysicalDevice physicalDevice = devices[0];
-
+    //
     vkDestroyInstance(instance, nullptr);
 }

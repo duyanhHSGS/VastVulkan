@@ -228,8 +228,237 @@ int main() {
     // unmap later
     vkUnmapMemory(logicalDevice, bufferMemory);
 
-    // actual compute? i aint ready for this!!!
-    // Cleanup
+    // ===== STEP 4–8: setup compute pipeline + dispatch =====
+
+    // 1) Descriptor set layout: one storage buffer at set=0, binding=0
+    VkDescriptorSetLayoutBinding layoutBinding{};
+    layoutBinding.binding = 0;
+    layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    layoutBinding.descriptorCount = 1;
+    layoutBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    layoutBinding.pImmutableSamplers = nullptr;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &layoutBinding;
+
+    VkDescriptorSetLayout descriptorSetLayout;
+    if (vkCreateDescriptorSetLayout(logicalDevice, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+        std::cerr << "Failed to create descriptor set layout!\n";
+        return -1;
+    }
+
+    // 2) Descriptor pool
+    VkDescriptorPoolSize poolSize{};
+    poolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    poolSize.descriptorCount = 1;
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+    poolInfo.maxSets = 1;
+
+    VkDescriptorPool descriptorPool;
+    if (vkCreateDescriptorPool(logicalDevice, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
+        std::cerr << "Failed to create descriptor pool!\n";
+        return -1;
+    }
+
+    // 3) Allocate descriptor set
+    VkDescriptorSetAllocateInfo allocDSInfo{};
+    allocDSInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocDSInfo.descriptorPool = descriptorPool;
+    allocDSInfo.descriptorSetCount = 1;
+    allocDSInfo.pSetLayouts = &descriptorSetLayout;
+
+    VkDescriptorSet descriptorSet;
+    if (vkAllocateDescriptorSets(logicalDevice, &allocDSInfo, &descriptorSet) != VK_SUCCESS) {
+        std::cerr << "Failed to allocate descriptor set!\n";
+        return -1;
+    }
+
+    // 4) Update descriptor set to point to your buffer
+    VkDescriptorBufferInfo bufferDescInfo{};
+    bufferDescInfo.buffer = buffer;
+    bufferDescInfo.offset = 0;
+    bufferDescInfo.range = VK_WHOLE_SIZE;  // or sizeof(uint32_t)*9
+
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = descriptorSet;
+    write.dstBinding = 0;
+    write.dstArrayElement = 0;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    write.descriptorCount = 1;
+    write.pBufferInfo = &bufferDescInfo;
+
+    vkUpdateDescriptorSets(logicalDevice, 1, &write, 0, nullptr);
+
+    // 5) Load shader module from SPIR-V file "ninjaclan.comp.spv"
+    // NOTE: this part uses FILE* and a fixed-size buffer to avoid heap
+    FILE* f = fopen("ninjaclan.comp.spv", "rb");
+    if (!f) {
+        std::cerr << "Failed to open ninjaclan.comp.spv!\n";
+        return -1;
+    }
+    fseek(f, 0, SEEK_END);
+    long fileSize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    if (fileSize <= 0 || fileSize > 4096) {
+        std::cerr << "Shader file size invalid or too big!\n";
+        fclose(f);
+        return -1;
+    }
+
+    // SPIR-V is uint32_t words; make static buffer
+    uint32_t spirvData[4096 / 4];  // 4096 bytes max → 1024 uint32_t
+    size_t readBytes = fread(spirvData, 1, fileSize, f);
+    fclose(f);
+    if (readBytes != static_cast<size_t>(fileSize)) {
+        std::cerr << "Failed to read full shader file!\n";
+        return -1;
+    }
+
+    VkShaderModuleCreateInfo shaderInfo{};
+    shaderInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    shaderInfo.codeSize = static_cast<size_t>(fileSize);
+    shaderInfo.pCode = spirvData;
+
+    VkShaderModule shaderModule;
+    if (vkCreateShaderModule(logicalDevice, &shaderInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+        std::cerr << "Failed to create shader module!\n";
+        return -1;
+    }
+
+    // 6) Create pipeline layout (connects descriptor sets to pipeline)
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
+
+    VkPipelineLayout pipelineLayout;
+    if (vkCreatePipelineLayout(logicalDevice, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+        std::cerr << "Failed to create pipeline layout!\n";
+        return -1;
+    }
+
+    // 7) Create compute pipeline
+    VkComputePipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    pipelineInfo.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    pipelineInfo.stage.module = shaderModule;
+    pipelineInfo.stage.pName = "main";
+    pipelineInfo.layout = pipelineLayout;
+
+    VkPipeline pipeline;
+    if (vkCreateComputePipelines(logicalDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
+        std::cerr << "Failed to create compute pipeline!\n";
+        return -1;
+    }
+
+    // 8) Command pool & command buffer
+    VkCommandPoolCreateInfo cmdPoolInfo{};
+    cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    cmdPoolInfo.queueFamilyIndex = computeQueueFamilyIndex;
+    cmdPoolInfo.flags = 0;
+
+    VkCommandPool commandPool;
+    if (vkCreateCommandPool(logicalDevice, &cmdPoolInfo, nullptr, &commandPool) != VK_SUCCESS) {
+        std::cerr << "Failed to create command pool!\n";
+        return -1;
+    }
+
+    VkCommandBufferAllocateInfo cmdAllocInfo{};
+    cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cmdAllocInfo.commandPool = commandPool;
+    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmdAllocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer commandBuffer;
+    if (vkAllocateCommandBuffers(logicalDevice, &cmdAllocInfo, &commandBuffer) != VK_SUCCESS) {
+        std::cerr << "Failed to allocate command buffer!\n";
+        return -1;
+    }
+
+    // 9) Record command buffer
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = 0;
+    beginInfo.pInheritanceInfo = nullptr;
+
+    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+        std::cerr << "Failed to begin command buffer!\n";
+        return -1;
+    }
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+    vkCmdBindDescriptorSets(
+        commandBuffer,
+        VK_PIPELINE_BIND_POINT_COMPUTE,
+        pipelineLayout,
+        0,  // firstSet
+        1, &descriptorSet,
+        0, nullptr  // dynamic offsets
+    );
+
+    // Dispatch 1 workgroup of 9 ninjas (because local_size_x = 9)
+    vkCmdDispatch(commandBuffer, 1, 1, 1);
+
+    if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+        std::cerr << "Failed to record command buffer!\n";
+        return -1;
+    }
+
+    // 10) Submit to queue and wait
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &commandBuffer;
+
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+
+    VkFence fence;
+    if (vkCreateFence(logicalDevice, &fenceInfo, nullptr, &fence) != VK_SUCCESS) {
+        std::cerr << "Failed to create fence!\n";
+        return -1;
+    }
+
+    if (vkQueueSubmit(computeQueue, 1, &submitInfo, fence) != VK_SUCCESS) {
+        std::cerr << "Failed to submit to compute queue!\n";
+        return -1;
+    }
+
+    vkWaitForFences(logicalDevice, 1, &fence, VK_TRUE, UINT64_MAX);
+
+    // 11) Map memory again and read back results
+    if (vkMapMemory(logicalDevice, bufferMemory, 0, memReq.size, 0, &data) != VK_SUCCESS) {
+        std::cerr << "Failed to remap memory!\n";
+        return -1;
+    }
+
+    nums = (uint32_t*)data;
+    std::cout << "After compute:\n";
+    for (size_t i = 0; i < 9; ++i) {
+        std::cout << "nums[" << i << "] = " << nums[i] << '\n';
+    }
+    vkUnmapMemory(logicalDevice, bufferMemory);
+
+    // ===== Cleanup =====
+    vkDestroyFence(logicalDevice, fence, nullptr);
+    vkDestroyCommandPool(logicalDevice, commandPool, nullptr);
+    vkDestroyPipeline(logicalDevice, pipeline, nullptr);
+    vkDestroyPipelineLayout(logicalDevice, pipelineLayout, nullptr);
+    vkDestroyShaderModule(logicalDevice, shaderModule, nullptr);
+    vkDestroyDescriptorPool(logicalDevice, descriptorPool, nullptr);
+    vkDestroyDescriptorSetLayout(logicalDevice, descriptorSetLayout, nullptr);
+
+    vkFreeMemory(logicalDevice, bufferMemory, nullptr);
+    vkDestroyBuffer(logicalDevice, buffer, nullptr);
     vkDestroyDevice(logicalDevice, nullptr);
     vkDestroyInstance(instance, nullptr);
 }

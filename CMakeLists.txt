@@ -16,6 +16,14 @@ find_package(Vulkan REQUIRED)
 target_include_directories(my_project PRIVATE ${Vulkan_INCLUDE_DIRS})
 target_link_libraries(my_project PRIVATE ${Vulkan_LIBRARIES})
 
+# #GLFW (needed for window + surface)
+# find_package(glfw3 REQUIRED)
+# target_link_libraries(my_project PRIVATE glfw)
+
+find_package(OpenSSL REQUIRED)
+target_include_directories(my_project PRIVATE ${OPENSSL_INCLUDE_DIR})
+target_link_libraries(my_project PRIVATE OpenSSL::Crypto)
+
 # Compile flags
 target_compile_features(my_project PRIVATE cxx_std_23)
 target_compile_options(my_project PRIVATE -Wall -Wextra -O3 -march=native -flto)

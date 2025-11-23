@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <csignal>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
@@ -17,14 +18,23 @@ constexpr std::array<char, 62> chars = {
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
 
 std::atomic<bool> found(false);
+std::atomic<bool> stop_flag(false);
 std::atomic<std::string*> result_ptr(nullptr);
 
+// Every worker will update this
+std::vector<std::string> last_checked;
+
+// ---- SIGNAL HANDLER ----
+void handle_sigint(int) {
+    stop_flag.store(true);
+}
+
+// ---- SHA256 ----
 void sha256_hex(const char* data, size_t len, char out_hex[65]) {
     unsigned char hash[SHA256_DIGEST_LENGTH];
     SHA256(reinterpret_cast<const unsigned char*>(data), len, hash);
 
     constexpr char hexmap[] = "0123456789abcdef";
-
     for (size_t i = 0; i < SHA256_DIGEST_LENGTH; i++) {
         out_hex[i * 2] = hexmap[(hash[i] >> 4) & 0xF];
         out_hex[i * 2 + 1] = hexmap[hash[i] & 0xF];
@@ -32,17 +42,23 @@ void sha256_hex(const char* data, size_t len, char out_hex[65]) {
     out_hex[64] = '\0';
 }
 
-void worker(int length, uint64_t start, uint64_t end) {
+// ---- WORKER ----
+void worker(int tid, int length, uint64_t start, uint64_t end) {
     char buf[5];
     char hash_hex[65];
 
-    for (uint64_t n = start; n < end && !found.load(); n++) {
+    for (uint64_t n = start; n < end && !found.load() && !stop_flag.load(); n++) {
+        // generate string
         uint64_t x = n;
         for (int i = 0; i < length; i++) {
             buf[i] = chars[x % chars.size()];
             x /= chars.size();
         }
 
+        // record last checked (cheap write!)
+        last_checked[tid].assign(buf, length);
+
+        // check hash
         sha256_hex(buf, length, hash_hex);
 
         if (memcmp(hash_hex, TARGET, 64) == 0) {
@@ -54,8 +70,13 @@ void worker(int length, uint64_t start, uint64_t end) {
 }
 
 int main() {
+    // enable CTRL+C handler
+    std::signal(SIGINT, handle_sigint);
+
     const int thread_count = std::thread::hardware_concurrency();
     std::cout << "Using " << thread_count << " CPU threads\n";
+
+    last_checked.resize(thread_count);
 
     for (int length = 1; length <= 5; length++) {
         uint64_t total = 1;
@@ -68,13 +89,22 @@ int main() {
         for (int t = 0; t < thread_count; t++) {
             uint64_t start = t * chunk;
             uint64_t end = (t == thread_count - 1) ? total : start + chunk;
-            threads.emplace_back(worker, length, start, end);
+            threads.emplace_back(worker, t, length, start, end);
         }
 
         for (auto& th : threads) th.join();
 
         if (found.load()) {
             std::cout << "FOUND: " << *result_ptr.load() << "\n";
+            return 0;
+        }
+
+        if (stop_flag.load()) {
+            std::cout << "\n=== TERMINATED ===\n";
+            for (int t = 0; t < thread_count; t++) {
+                std::cout << "Thread " << t << " last checked: "
+                          << last_checked[t] << "\n";
+            }
             return 0;
         }
     }

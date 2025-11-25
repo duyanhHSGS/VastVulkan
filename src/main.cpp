@@ -28,7 +28,7 @@ std::vector<std::string> last_checked;
 void handle_sigint(int) {
     stop_flag.store(true);
 }
-
+//
 // ---- SHA256 ----
 void sha256_hex(const char* data, size_t len, char out_hex[65]) {
     unsigned char hash[SHA256_DIGEST_LENGTH];

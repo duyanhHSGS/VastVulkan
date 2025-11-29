@@ -29,9 +29,8 @@ inline void VK_CHECK(VkResult err, const char* file = __builtin_FILE(), int line
         std::abort();
     }
 }
-
-static const uint32_t WIDTH = 800;
-static const uint32_t HEIGHT = 600;
+static const uint32_t WIDTH = 1600;
+static const uint32_t HEIGHT = 500;
 
 // === Minimal math (column-major 4x4 matrix) =========================
 
@@ -39,7 +38,7 @@ struct Mat4 {
     float m[16];
 };
 
-static Mat4 mat_identity() {
+static Mat4 mat_identity() {  // unit
     Mat4 r{};
     r.m[0] = r.m[5] = r.m[10] = r.m[15] = 1.0f;
     return r;
@@ -784,7 +783,7 @@ static void update_uniform_buffer() {
                                 (float)g_swapchainExtent.width / (float)g_swapchainExtent.height,
                                 0.1f, 10.0f);
     Mat4 view = mat_translate(0.0f, 0.0f, -2.0f);
-    Mat4 model = mat_rotate_y(time);
+    Mat4 model = mat_rotate_y(time * 10);
 
     Mat4 mvp = mat_mul(proj, mat_mul(view, model));
 
